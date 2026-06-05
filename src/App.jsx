@@ -1,4 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
+import Login from "./Login";
+
+// ─── SUPABASE INIT ─────────────────────────────────────────────────────────────
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -267,6 +275,8 @@ option{background:#1A1A14;color:#C4B990;}
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("dashboard");
   const [data, setData] = useState(initData);
   const [selSub, setSelSub] = useState("FR");
@@ -277,6 +287,60 @@ export default function App() {
   const [mockSub, setMockSub] = useState("FR");
   const [mockScore, setMockScore] = useState(50);
   const chatEnd = useRef(null);
+
+  // ── Load data from Supabase on mount ──
+  useEffect(() => {
+    if (!user) return;
+    const loadData = async () => {
+      try {
+        const { data: dbData, error } = await supabase
+          .from('tracker_data')
+          .select('data')
+          .eq('user_id', user)
+          .single();
+        
+        if (error && error.code !== 'PGRST116') {
+          console.error('Load error:', error);
+          return;
+        }
+        
+        if (dbData && dbData.data) {
+          setData(dbData.data);
+        }
+      } catch (err) {
+        console.error('Unexpected load error:', err);
+      }
+    };
+    loadData();
+  }, [user]);
+
+  // ── Auto-save to Supabase when data changes ──
+  useEffect(() => {
+    if (!user || !data) return;
+    
+    const saveData = async () => {
+      try {
+        const { error } = await supabase
+          .from('tracker_data')
+          .upsert(
+            { user_id: user, data },
+            { onConflict: 'user_id' }
+          );
+        
+        if (error) console.error('Save error:', error);
+      } catch (err) {
+        console.error('Unexpected save error:', err);
+      }
+    };
+
+    const timer = setTimeout(saveData, 500); // Debounce saves
+    return () => clearTimeout(timer);
+  }, [data, user]);
+
+  // Show login screen if not authenticated
+  if (!user) {
+    return <Login onLogin={setUser} />;
+  }
 
   useEffect(() => {
     let el = document.getElementById("ca-styles");
@@ -454,6 +518,19 @@ export default function App() {
             <span className="badge b-red">{days}d left</span>
             <span className="badge b-grn">{weeks}w</span>
             <span className="badge b-gold">🔥 {data.streak.count} streak</span>
+            <button onClick={() => setUser(null)} style={{
+              background: 'rgba(194,74,74,.12)',
+              border: '.5px solid rgba(194,74,74,.28)',
+              color: '#C27A7A',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '9px',
+              letterSpacing: '.08em',
+              padding: '3px 8px',
+              borderRadius: '2px',
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              marginTop: '4px'
+            }}>Logout</button>
           </div>
         </div>
 
